@@ -1,0 +1,53 @@
+# Flutter/Dart
+.dart_tool/
+.pub-cache/
+.pub/
+build/
+*.iml
+
+# IDEs
+.idea/
+.vscode/
+
+# Android
+android/.gradle/
+android/local.properties
+android/app/google-services.json
+
+# iOS
+ios/Pods/
+ios/Podfile.lock
+ios/Flutter/ephemeral/
+
+# macOS
+macos/Pods/
+macos/Podfile.lock
+macos/Flutter/ephemeral/
+
+# Linux & Windows generated
+linux/flutter/generated_plugin_registrant.cc
+linux/flutter/generated_plugins.cmake
+windows/flutter/generated_plugin_registrant.cc
+windows/flutter/generated_plugins.cmake
+
+# Logs
+*.log
+
+# Coverage
+coverage/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+
+# APK / App bundles
+*.apk
+*.aab
