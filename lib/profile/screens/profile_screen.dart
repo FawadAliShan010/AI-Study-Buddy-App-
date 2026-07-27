@@ -17,7 +17,6 @@ import '../../core/Widgets/language_setting_screen.dart';
 import '../../core/Widgets/privacy_setting_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../widgets/profile_tile.dart';
-
 import 'change_password_screen.dart';
 import 'edit_profile_screen.dart';
 
@@ -43,6 +42,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
       backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Profile'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFF0A0E17),
+                const Color(0xFF1A1A2E),
+                const Color(0xFF16213E),
+                const Color(0xFF0F3460),
+              ],
+              stops: const [0.0, 0.3, 0.6, 1.0],
+            ),
+          ),
+        ),
         actions: [
           IconButton(
             icon: _isRefreshing
@@ -56,30 +72,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            FadeInDown(
-              child: _buildProfileHeader(user, authProvider),
-            ),
-            const SizedBox(height: 24),
-            FadeInUp(
-              delay: const Duration(milliseconds: 200),
-              child: _buildStatsSection(studyProvider),
-            ),
-            const SizedBox(height: 24),
-            FadeInUp(
-              delay: const Duration(milliseconds: 300),
-              child: _buildSettingsSection(themeProvider),
-            ),
-            const SizedBox(height: 24),
-            FadeInUp(
-              delay: const Duration(milliseconds: 400),
-              child: _buildAccountSection(authProvider),
-            ),
-            const SizedBox(height: 32),
-          ],
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF0A0E17),
+              const Color(0xFF1A1A2E),
+              const Color(0xFF16213E),
+              const Color(0xFF0F3460),
+            ],
+            stops: const [0.0, 0.3, 0.6, 1.0],
+          ),
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              FadeInDown(
+                child: _buildProfileHeader(user, authProvider),
+              ),
+              const SizedBox(height: 24),
+              FadeInUp(
+                delay: const Duration(milliseconds: 200),
+                child: _buildStatsSection(studyProvider),
+              ),
+              const SizedBox(height: 24),
+              FadeInUp(
+                delay: const Duration(milliseconds: 300),
+                child: _buildSettingsSection(themeProvider),
+              ),
+              const SizedBox(height: 24),
+              FadeInUp(
+                delay: const Duration(milliseconds: 400),
+                child: _buildAccountSection(authProvider),
+              ),
+              const SizedBox(height: 32),
+            ],
+          ),
         ),
       ),
     );
@@ -179,8 +212,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
                   color: user?.emailVerified ?? false
-                      ? Colors.green.withValues(alpha: 0.2)
-                      : Colors.orange.withValues(alpha: 0.2),
+                      ? Colors.green.withOpacity(0.2)
+                      : Colors.orange.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -210,7 +243,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 TextButton(
                   onPressed: () => _sendVerificationEmail(authProvider),
                   style: TextButton.styleFrom(
-                    backgroundColor: Colors.white.withValues(alpha: 0.1),
+                    backgroundColor: Colors.white.withOpacity(0.1),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -237,10 +270,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(AppConstants.defaultRadius),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.1),
+          color: Colors.white.withOpacity(0.1),
         ),
       ),
       child: Column(
@@ -270,35 +303,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 value: Helpers.formatStudyTime(provider.studyTime),
                 label: 'Study Time',
                 color: AppColors.secondary,
-                onTap: () => _showStatDetails(context, 'Study Time', 'Total time spent studying'),
               ),
               _buildStatItem(
                 icon: Icons.quiz_rounded,
                 value: provider.quizzesCompleted.toString(),
                 label: 'Quizzes',
                 color: AppColors.primary,
-                onTap: () => _showStatDetails(context, 'Quizzes', 'Total quizzes completed'),
               ),
               _buildStatItem(
                 icon: Icons.note_rounded,
                 value: provider.notesCreated.toString(),
                 label: 'Notes',
                 color: AppColors.accent,
-                onTap: () => _showStatDetails(context, 'Notes', 'Total notes created'),
               ),
               _buildStatItem(
                 icon: Icons.local_fire_department_rounded,
                 value: '${provider.streak}',
                 label: 'Day Streak',
                 color: Colors.orange,
-                onTap: () => _showStatDetails(context, 'Streak', 'Current study streak in days'),
               ),
             ],
           ),
           const SizedBox(height: 12),
           LinearProgressIndicator(
             value: provider.studyTime > 0 ? provider.studyTime / 3600 / 8 : 0,
-            backgroundColor: Colors.white.withValues(alpha: 0.1),
+            backgroundColor: Colors.white.withOpacity(0.1),
             valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
             borderRadius: BorderRadius.circular(8),
           ),
@@ -320,35 +349,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required String value,
     required String label,
     required Color color,
-    VoidCallback? onTap,
   }) {
     return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            children: [
-              Icon(icon, color: color, size: 24),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: GoogleFonts.orbitron(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: GoogleFonts.orbitron(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
               ),
-              Text(
-                label,
-                style: GoogleFonts.inter(
-                  color: Colors.white60,
-                  fontSize: 11,
-                ),
+            ),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                color: Colors.white60,
+                fontSize: 11,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -358,10 +382,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(AppConstants.defaultRadius),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.1),
+          color: Colors.white.withOpacity(0.1),
         ),
       ),
       child: Column(
@@ -430,10 +454,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(AppConstants.defaultRadius),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.1),
+          color: Colors.white.withOpacity(0.1),
         ),
       ),
       child: Column(
@@ -536,8 +560,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _isRefreshing = true);
     try {
       await authProvider.refreshUser();
-      // FIX: Pass userId to loadStudyData
-      await studyProvider.loadStudyData(authProvider.userId);
+      final userId = authProvider.userId;
+      if (userId!.isNotEmpty) {
+        await studyProvider.loadStudyData(userId);
+      }
       if (mounted) {
         Helpers.showSnackBar(context, 'Data refreshed successfully');
       }
@@ -606,9 +632,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       await FirebaseService().signOut();
       if (mounted) {
-        Navigator.pushReplacement(
+        // Use pushAndRemoveUntil to go to LoginScreen and clear all routes
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const LoginScreen()),
+              (route) => false,
         );
       }
     } catch (e) {
@@ -627,9 +655,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       await authProvider.deleteAccount();
       if (mounted) {
-        Navigator.pushReplacement(
+        // Use pushAndRemoveUntil to go to LoginScreen and clear all routes
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const LoginScreen()),
+              (route) => false,
         );
         Helpers.showSnackBar(context, 'Account deleted successfully');
       }
@@ -647,7 +677,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showDetailedStats(BuildContext context, StudyProvider provider) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: const Color(0xFF1A1A2E),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -659,7 +689,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             Text(
               'Detailed Statistics',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              style: GoogleFonts.orbitron(
+                color: Colors.white,
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -668,7 +700,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _buildDetailItem('Total Quizzes', provider.quizzesCompleted.toString()),
             _buildDetailItem('Total Notes', provider.notesCreated.toString()),
             _buildDetailItem('Current Streak', '${provider.streak} days'),
-            _buildDetailItem('Average Daily Study', Helpers.formatStudyTime(provider.averageDailyTime)),
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () => Navigator.pop(context),
@@ -709,13 +740,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _showStatDetails(BuildContext context, String title, String description) {
-    Helpers.showSnackBar(
-      context,
-      '$title: $description',
-    );
-  }
-
   void _navigateToScreen(BuildContext context, Widget screen) {
     Navigator.push(
       context,
@@ -727,20 +751,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('About Study App'),
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: Text(
+          'About Study App',
+          style: GoogleFonts.orbitron(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Version: 1.0.0'),
+            Text(
+              'Version: 1.0.0',
+              style: GoogleFonts.inter(color: Colors.white70),
+            ),
             const SizedBox(height: 8),
             Text(
               'A modern study companion app designed to help you track your study progress, take quizzes, and manage your learning journey.',
-              style: GoogleFonts.inter(fontSize: 14),
+              style: GoogleFonts.inter(
+                color: Colors.white70,
+                fontSize: 14,
+              ),
             ),
             const SizedBox(height: 16),
-            const Text('Developed by: Fawad Ali Shan'),
-            const Text('© 2026 All Rights Reserved'),
+            Text(
+              'Developed by: Fawad Ali Shan',
+              style: GoogleFonts.inter(color: Colors.white70),
+            ),
+            Text(
+              '© 2026 All Rights Reserved',
+              style: GoogleFonts.inter(color: Colors.white70),
+            ),
           ],
         ),
         actions: [
@@ -756,7 +799,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showSupportOptions(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: const Color(0xFF1A1A2E),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -768,27 +811,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             Text(
               'Help & Support',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              style: GoogleFonts.orbitron(
+                color: Colors.white,
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 16),
             ListTile(
               leading: const Icon(Icons.email_rounded, color: AppColors.primary),
-              title: const Text('Email Support'),
-              subtitle: const Text('support@yourapp.com'),
+              title: Text(
+                'Email Support',
+                style: GoogleFonts.inter(color: Colors.white),
+              ),
+              subtitle: Text(
+                'support@yourapp.com',
+                style: GoogleFonts.inter(color: Colors.white54),
+              ),
               onTap: () => _launchEmail('support@yourapp.com'),
             ),
             ListTile(
               leading: const Icon(Icons.chat_rounded, color: AppColors.primary),
-              title: const Text('Live Chat'),
-              subtitle: const Text('Available 24/7'),
+              title: Text(
+                'Live Chat',
+                style: GoogleFonts.inter(color: Colors.white),
+              ),
+              subtitle: Text(
+                'Available 24/7',
+                style: GoogleFonts.inter(color: Colors.white54),
+              ),
               onTap: () => Helpers.showSnackBar(context, 'Live chat coming soon!'),
             ),
             ListTile(
               leading: const Icon(Icons.feedback_rounded, color: AppColors.primary),
-              title: const Text('Send Feedback'),
-              subtitle: const Text('Help us improve'),
+              title: Text(
+                'Send Feedback',
+                style: GoogleFonts.inter(color: Colors.white),
+              ),
+              subtitle: Text(
+                'Help us improve',
+                style: GoogleFonts.inter(color: Colors.white54),
+              ),
               onTap: () => Helpers.showSnackBar(context, 'Feedback feature coming soon!'),
             ),
             const SizedBox(height: 16),

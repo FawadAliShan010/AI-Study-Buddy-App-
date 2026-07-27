@@ -52,6 +52,7 @@ class ProfileTile extends StatelessWidget {
           )
               : null),
       contentPadding: EdgeInsets.zero,
+      minTileHeight: 50,
     );
   }
 }
