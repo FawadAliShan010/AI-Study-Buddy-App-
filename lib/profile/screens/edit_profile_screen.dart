@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/utils/helpers.dart';
+import '../../core/constants/app_constants.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final User? user;
@@ -32,8 +34,26 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Edit Profile'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFF0A0E17),
+                const Color(0xFF1A1A2E),
+                const Color(0xFF16213E),
+                const Color(0xFF0F3460),
+              ],
+              stops: const [0.0, 0.3, 0.6, 1.0],
+            ),
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _saveProfile,
@@ -41,45 +61,106 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              const CircleAvatar(
-                radius: 50,
-                child: Icon(Icons.person_rounded, size: 50),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Display Name',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter a name';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              Text(
-                widget.user?.email ?? '',
-                style: const TextStyle(color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: _isLoading ? null : _updateProfilePicture,
-                icon: const Icon(Icons.camera_alt_rounded),
-                label: const Text('Update Profile Picture'),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
-                ),
-              ),
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF0A0E17),
+              const Color(0xFF1A1A2E),
+              const Color(0xFF16213E),
+              const Color(0xFF0F3460),
             ],
+            stops: const [0.0, 0.3, 0.6, 1.0],
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: AppGradients.secondaryGradient,
+                    boxShadow: AppShadows.glow,
+                  ),
+                  child: CircleAvatar(
+                    radius: 50,
+                    backgroundColor: Colors.transparent,
+                    child: widget.user?.photoURL != null
+                        ? ClipRRect(
+                      borderRadius: BorderRadius.circular(50),
+                      child: Image.network(
+                        widget.user!.photoURL!,
+                        fit: BoxFit.cover,
+                        width: 100,
+                        height: 100,
+                        errorBuilder: (context, error, stackTrace) =>
+                        const Icon(Icons.person_rounded, size: 50),
+                      ),
+                    )
+                        : const Icon(
+                      Icons.person_rounded,
+                      size: 50,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _nameController,
+                  style: GoogleFonts.inter(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Display Name',
+                    labelStyle: GoogleFonts.inter(color: Colors.white70),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppColors.primary),
+                    ),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter a name';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  widget.user?.email ?? '',
+                  style: GoogleFonts.inter(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: _isLoading ? null : _updateProfilePicture,
+                  icon: const Icon(Icons.camera_alt_rounded),
+                  label: const Text('Update Profile Picture'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    minimumSize: const Size(double.infinity, 48),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -109,7 +190,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _updateProfilePicture() async {
-    // Implement image picker and upload
     Helpers.showSnackBar(context, 'Profile picture update coming soon!');
   }
 }

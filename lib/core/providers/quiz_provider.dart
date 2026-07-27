@@ -1,345 +1,80 @@
 import 'dart:convert';
-import 'dart:math';
 import 'package:flutter/material.dart';
-import '../services/firebase_service.dart';
+
 import '../services/groq_ai_service.dart';
-import '../services/local_storage_service.dart';
+
 
 class QuizProvider extends ChangeNotifier {
   final GroqApiService _aiService = GroqApiService();
-  final FirebaseService _firebaseService = FirebaseService();
-  final LocalStorageService _storage = LocalStorageService();
 
-  List<Map<String, dynamic>> _quizzes = [];
   List<Map<String, dynamic>> _currentQuizQuestions = [];
-  List<String> _userAnswers = [];
+  List<int> _userAnswers = [];
   int _currentQuestionIndex = 0;
   int _score = 0;
   bool _isLoading = false;
   bool _isQuizCompleted = false;
-  String? _currentTopic;
-  int? _selectedAnswerIndex;
-  bool _showAnswer = false;
-  final Random _random = Random();
+  int _totalQuestions = 0;
+
+  List<Map<String, dynamic>> _quizzes = [];
 
   // Getters
-  List<Map<String, dynamic>> get quizzes => _quizzes;
   List<Map<String, dynamic>> get currentQuizQuestions => _currentQuizQuestions;
-  List<String> get userAnswers => _userAnswers;
+  List<int> get userAnswers => _userAnswers;
   int get currentQuestionIndex => _currentQuestionIndex;
   int get score => _score;
   bool get isLoading => _isLoading;
   bool get isQuizCompleted => _isQuizCompleted;
-  String? get currentTopic => _currentTopic;
-  int? get selectedAnswerIndex => _selectedAnswerIndex;
-  bool get showAnswer => _showAnswer;
-  int get totalQuestions => _currentQuizQuestions.length;
-  double get progress => totalQuestions > 0 ? (_currentQuestionIndex / totalQuestions) : 0.0;
+  int get totalQuestions => _totalQuestions;
+  List<Map<String, dynamic>> get quizzes => _quizzes;
+
+  // Study stats getters for HomeScreen
+  int get studyTime => _calculateStudyTime();
+  int get quizzesCompleted => _quizzes.where((q) => q['completed'] == true).length;
+  int get notesCreated => 0;
+  int get streak => _calculateStreak();
 
   QuizProvider() {
-    _loadQuizzes();
+    loadDemoData();
   }
 
-  void _loadQuizzes() {
-    try {
-      final savedQuizzes = _storage.getObject('quiz_history');
-      if (savedQuizzes != null && savedQuizzes is List) {
-        _quizzes = savedQuizzes.cast<Map<String, dynamic>>();
-      }
-    } catch (e) {
-      _quizzes = [];
-    }
-    notifyListeners();
-  }
-
-  Future<void> _saveQuizzes() async {
-    try {
-      await _storage.setObject('quiz_history', _quizzes);
-    } catch (e) {
-      // Failed to save quizzes
-    }
-  }
-
-  Future<void> generateQuiz(String topic, int questionCount, {int numberOfQuestions = 5}) async {
-    _setLoading(true);
-    _currentTopic = topic;
-    _score = 0;
-    _currentQuestionIndex = 0;
-    _isQuizCompleted = false;
-    _selectedAnswerIndex = null;
-    _showAnswer = false;
-    _userAnswers = [];
-
-    try {
-      final response = await _aiService.generateQuiz(topic, numberOfQuestions);
-      _currentQuizQuestions = _parseAndShuffleQuizResponse(response, numberOfQuestions);
-
-      if (_currentQuizQuestions.isEmpty) {
-        _currentQuizQuestions = _getFallbackQuestions(topic, numberOfQuestions);
-      }
-
-      // Shuffle the questions
-      _currentQuizQuestions.shuffle(_random);
-
-      _quizzes.add({
-        'topic': topic,
-        'questions': _currentQuizQuestions,
-        'date': DateTime.now().toIso8601String(),
-        'totalQuestions': _currentQuizQuestions.length,
-        'score': 0,
-        'completed': false,
-      });
-      await _saveQuizzes();
-
-      notifyListeners();
-    } catch (e) {
-      _currentQuizQuestions = _getFallbackQuestions(topic, numberOfQuestions);
-      _currentQuizQuestions.shuffle(_random);
-      notifyListeners();
-      throw Exception('Failed to generate quiz: $e');
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  List<Map<String, dynamic>> _parseAndShuffleQuizResponse(String response, int expectedCount) {
-    List<Map<String, dynamic>> questions = [];
-
-    try {
-      final lines = response.split('\n');
-      Map<String, dynamic>? currentQuestion;
-
-      for (var line in lines) {
-        line = line.trim();
-        if (line.isEmpty) continue;
-
-        if (line.startsWith('Q:')) {
-          if (currentQuestion != null) {
-            questions.add(currentQuestion);
-          }
-          currentQuestion = {
-            'question': line.substring(2).trim(),
-            'options': [],
-            'correctAnswer': '',
-          };
-        } else if (line.startsWith('A:')) {
-          if (currentQuestion != null) {
-            currentQuestion['correctAnswer'] = line.substring(2).trim();
-          }
-        } else if (line.startsWith('Options:')) {
-          if (currentQuestion != null) {
-            final optionsStr = line.substring(8).trim();
-            var options = optionsStr.split(',').map((o) => o.trim()).toList();
-
-            // Shuffle options for each question
-            options.shuffle(_random);
-            currentQuestion['options'] = options;
-          }
-        }
-      }
-
-      if (currentQuestion != null) {
-        questions.add(currentQuestion);
-      }
-
-      // Ensure correct answer is in options
-      for (var question in questions) {
-        final options = question['options'] as List;
-        final correctAnswer = question['correctAnswer'] as String;
-
-        // If correct answer not in options, add it
-        if (!options.contains(correctAnswer)) {
-          options.add(correctAnswer);
-          options.shuffle(_random);
-          question['options'] = options;
-        }
-      }
-
-    } catch (e) {
-      questions = [];
-    }
-
-    // Ensure we have the expected number of questions
-    while (questions.length < expectedCount) {
-      questions.add(_getFallbackQuestion('${_currentTopic ?? 'General'} ${questions.length + 1}'));
-    }
-
-    return questions.take(expectedCount).toList();
-  }
-
-  List<Map<String, dynamic>> _getFallbackQuestions(String topic, int count) {
-    final questions = <Map<String, dynamic>>[];
-    for (int i = 0; i < count; i++) {
-      questions.add(_getFallbackQuestion('$topic ${i + 1}'));
-    }
-    return questions;
-  }
-
-  Map<String, dynamic> _getFallbackQuestion(String topic) {
-    final options = [
-      'Option A',
-      'Option B',
-      'Option C',
-      'Option D'
-    ];
-
-    // Randomly select one option as correct
-    final correctIndex = _random.nextInt(options.length);
-    final correctAnswer = options[correctIndex];
-
-    // Shuffle options
-    options.shuffle(_random);
-
-    return {
-      'question': 'What is a key concept in $topic?',
-      'options': options,
-      'correctAnswer': correctAnswer,
-    };
-  }
-
-  void selectAnswer(int answerIndex) {
-    if (_isQuizCompleted || _showAnswer) return;
-
-    _selectedAnswerIndex = answerIndex;
-    _showAnswer = true;
-
-    final question = _currentQuizQuestions[_currentQuestionIndex];
-    final options = question['options'] as List;
-    final selectedOption = options[answerIndex];
-    final correctAnswer = question['correctAnswer'] as String;
-    final isCorrect = selectedOption == correctAnswer;
-
-    // Store user answer
-    if (_userAnswers.length <= _currentQuestionIndex) {
-      _userAnswers.add(selectedOption);
-    } else {
-      _userAnswers[_currentQuestionIndex] = selectedOption;
-    }
-
-    if (isCorrect) {
-      _score++;
-    }
-
-    notifyListeners();
-  }
-
-  void nextQuestion() {
-    if (_currentQuestionIndex < _currentQuizQuestions.length - 1) {
-      _currentQuestionIndex++;
-      _selectedAnswerIndex = null;
-      _showAnswer = false;
-      notifyListeners();
-    } else {
-      _completeQuiz();
-    }
-  }
-
-  void _completeQuiz() {
-    _isQuizCompleted = true;
-
-    if (_quizzes.isNotEmpty) {
-      final lastQuiz = _quizzes.last;
-      lastQuiz['score'] = _score;
-      lastQuiz['completed'] = true;
-      lastQuiz['percentage'] = (_score / _currentQuizQuestions.length * 100).round();
-      _saveQuizzes();
-    }
-
-    notifyListeners();
-  }
-
-  void retakeQuiz() {
-    // Reshuffle questions for retake
-    _currentQuizQuestions.shuffle(_random);
-    // Reshuffle options for each question
-    for (var question in _currentQuizQuestions) {
-      final options = question['options'] as List;
-      options.shuffle(_random);
-      question['options'] = options;
-    }
-
-    _currentQuestionIndex = 0;
-    _score = 0;
-    _isQuizCompleted = false;
-    _selectedAnswerIndex = null;
-    _showAnswer = false;
-    _userAnswers = [];
-    notifyListeners();
-  }
-
-  void resetQuiz() {
-    _currentQuizQuestions = [];
-    _currentQuestionIndex = 0;
-    _score = 0;
-    _isQuizCompleted = false;
-    _currentTopic = null;
-    _selectedAnswerIndex = null;
-    _showAnswer = false;
-    _userAnswers = [];
-    notifyListeners();
-  }
-
-  void _setLoading(bool loading) {
-    _isLoading = loading;
-    notifyListeners();
-  }
-
-  // Save quiz result to Firebase
-  Future<void> saveQuizResult(Map<String, dynamic> result, String userId) async {
-    try {
-      final data = Map<String, dynamic>.from(result);
-      data.remove('userId');
-      await _firebaseService.saveQuizResult(userId, data);
-    } catch (e) {
-      final localResults = _storage.getObject('local_quiz_results') ?? [];
-      if (localResults is List) {
-        localResults.add(result);
-        await _storage.setObject('local_quiz_results', localResults);
+  int _calculateStudyTime() {
+    int totalTime = 0;
+    for (var quiz in _quizzes) {
+      if (quiz['completed'] == true && quiz['timeSpent'] != null) {
+        totalTime += quiz['timeSpent'] as int;
       }
     }
+    return totalTime;
   }
 
-  // Get quiz history from Firebase
-  Future<List<Map<String, dynamic>>> getQuizHistory(String userId) async {
-    try {
-      final List<Map<String, dynamic>> results = [];
-      final snapshot = await _firebaseService
-          .getQuizResults(userId)
-          .first;
+  int _calculateStreak() {
+    if (_quizzes.isEmpty) return 0;
 
-      for (var doc in snapshot.docs) {
-        final data = doc.data() as Map<String, dynamic>;
-        data['id'] = doc.id;
-        results.add(data);
+    final completedQuizzes = _quizzes
+        .where((q) => q['completed'] == true)
+        .toList()
+      ..sort((a, b) => DateTime.parse(b['date']).compareTo(DateTime.parse(a['date'])));
+
+    if (completedQuizzes.isEmpty) return 0;
+
+    final now = DateTime.now();
+    final lastQuizDate = DateTime.parse(completedQuizzes.first['date']);
+    final difference = now.difference(lastQuizDate).inDays;
+
+    if (difference > 1) return 0;
+
+    int streak = 0;
+    for (int i = 0; i < completedQuizzes.length - 1; i++) {
+      final current = DateTime.parse(completedQuizzes[i]['date']);
+      final next = DateTime.parse(completedQuizzes[i + 1]['date']);
+      if (current.difference(next).inDays <= 1) {
+        streak++;
+      } else {
+        break;
       }
-
-      return results;
-    } catch (e) {
-      final localHistory = _storage.getObject('quiz_history');
-      if (localHistory != null && localHistory is List) {
-        return localHistory.cast<Map<String, dynamic>>();
-      }
-      return [];
     }
-  }
 
-  // Stream quiz history from Firebase
-  Stream<List<Map<String, dynamic>>> streamQuizHistory(String userId) {
-    try {
-      return _firebaseService
-          .getQuizResults(userId)
-          .map((snapshot) {
-        final List<Map<String, dynamic>> results = [];
-        for (var doc in snapshot.docs) {
-          final data = doc.data() as Map<String, dynamic>;
-          data['id'] = doc.id;
-          results.add(data);
-        }
-        return results;
-      });
-    } catch (e) {
-      return Stream.value([]);
-    }
+    return streak + 1;
   }
 
   Map<String, dynamic> getQuizStatistics() {
@@ -349,40 +84,286 @@ class QuizProvider extends ChangeNotifier {
       return {
         'totalQuizzes': 0,
         'averageScore': 0.0,
-        'bestTopic': '',
+        'bestTopic': null,
         'totalQuestions': 0,
         'correctAnswers': 0,
       };
     }
 
-    final totalScore = completedQuizzes.fold(0, (sum, q) => sum + (q['score'] as int));
-    final averageScore = totalScore / completedQuizzes.length;
-
+    int totalScore = 0;
     Map<String, int> topicScores = {};
+    int totalQuestions = 0;
+    int correctAnswers = 0;
+
     for (var quiz in completedQuizzes) {
-      final topic = quiz['topic'] as String;
-      final score = quiz['score'] as int;
-      topicScores[topic] = (topicScores[topic] ?? 0) + score;
+      final percentage = quiz['percentage'] as int? ?? 0;
+      totalScore += percentage;
+
+      final topic = quiz['topic'] as String? ?? 'Unknown';
+      topicScores[topic] = (topicScores[topic] ?? 0) + percentage;
+
+      totalQuestions += quiz['totalQuestions'] as int? ?? 0;
+      correctAnswers += quiz['correctAnswers'] as int? ?? 0;
     }
 
-    String bestTopic = '';
-    int highestScore = 0;
+    String? bestTopic;
+    int bestScore = 0;
     topicScores.forEach((topic, score) {
-      if (score > highestScore) {
-        highestScore = score;
+      if (score > bestScore) {
+        bestScore = score;
         bestTopic = topic;
       }
     });
 
-    final totalQuestions = completedQuizzes.fold(0, (sum, q) => sum + (q['totalQuestions'] as int));
-    final correctAnswers = completedQuizzes.fold(0, (sum, q) => sum + (q['score'] as int));
-
     return {
       'totalQuizzes': completedQuizzes.length,
-      'averageScore': averageScore,
+      'averageScore': totalScore / completedQuizzes.length,
       'bestTopic': bestTopic,
       'totalQuestions': totalQuestions,
       'correctAnswers': correctAnswers,
     };
+  }
+
+  // ✅ FIXED: generateQuiz method with proper type handling
+  Future<void> generateQuiz(String topic, int questionCount) async {
+    _isLoading = true;
+    _isQuizCompleted = false;
+    _currentQuestionIndex = 0;
+    _score = 0;
+    _userAnswers = [];
+    notifyListeners();
+
+    try {
+      // This returns a String (JSON)
+      final response = await _aiService.generateQuiz(topic, questionCount);
+
+      List<Map<String, dynamic>> parsedQuestions = [];
+
+      // ✅ FIXED: Only check for String since that's what the service returns
+      if (response is String) {
+        try {
+          String jsonString = response.trim();
+
+          // Remove markdown code blocks
+          if (jsonString.contains('```json')) {
+            jsonString = jsonString.split('```json')[1].split('```')[0].trim();
+          } else if (jsonString.contains('```')) {
+            jsonString = jsonString.split('```')[1].split('```')[0].trim();
+          }
+
+          // Parse the JSON string
+          final List<dynamic> decoded = jsonDecode(jsonString);
+          parsedQuestions = decoded.map((q) => Map<String, dynamic>.from(q)).toList();
+
+        } catch (e) {
+          throw Exception('Failed to parse JSON response: $e\nRaw response: $response');
+        }
+      } else {
+        throw Exception('Unexpected response type: ${response.runtimeType}');
+      }
+
+      if (parsedQuestions.isEmpty) {
+        throw Exception('No questions generated. Please try again.');
+      }
+
+      _currentQuizQuestions = parsedQuestions;
+      _totalQuestions = parsedQuestions.length;
+
+      // Add quiz to history with pending status
+      _quizzes.add({
+        'topic': topic,
+        'totalQuestions': questionCount,
+        'correctAnswers': 0,
+        'percentage': 0,
+        'date': DateTime.now().toIso8601String(),
+        'completed': false,
+        'timeSpent': 0,
+      });
+
+    } catch (e) {
+      // Clean up if generation fails
+      _currentQuizQuestions = [];
+      _totalQuestions = 0;
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // ✅ SIMPLER VERSION: Use the service's parsed method directly
+  Future<void> generateQuizSimple(String topic, int questionCount) async {
+    _isLoading = true;
+    _isQuizCompleted = false;
+    _currentQuestionIndex = 0;
+    _score = 0;
+    _userAnswers = [];
+    notifyListeners();
+
+    try {
+      // This returns parsed List directly
+      final parsedQuestions = await _aiService.generateQuizWithFallback(
+        topic,
+        questionCount,
+      );
+
+      if (parsedQuestions.isEmpty) {
+        throw Exception('No questions generated. Please try again.');
+      }
+
+      _currentQuizQuestions = parsedQuestions;
+      _totalQuestions = parsedQuestions.length;
+
+      _quizzes.add({
+        'topic': topic,
+        'totalQuestions': questionCount,
+        'correctAnswers': 0,
+        'percentage': 0,
+        'date': DateTime.now().toIso8601String(),
+        'completed': false,
+        'timeSpent': 0,
+      });
+
+    } catch (e) {
+      _currentQuizQuestions = [];
+      _totalQuestions = 0;
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void selectAnswer(int selectedIndex) {
+    if (_currentQuestionIndex >= _currentQuizQuestions.length) return;
+
+    final question = _currentQuizQuestions[_currentQuestionIndex];
+    final options = question['options'] as List;
+    final correctAnswer = question['correctAnswer'] as String;
+
+    final selectedAnswer = options[selectedIndex] as String;
+    final isCorrect = selectedAnswer == correctAnswer;
+
+    _userAnswers.add(selectedIndex);
+    if (isCorrect) {
+      _score++;
+    }
+
+    if (_userAnswers.length == _currentQuizQuestions.length) {
+      _isQuizCompleted = true;
+      _saveQuizResult();
+    }
+
+    notifyListeners();
+  }
+
+  void _saveQuizResult() {
+    final totalQuestions = _currentQuizQuestions.length;
+    final correctAnswers = _score;
+    final percentage = totalQuestions > 0 ? (correctAnswers / totalQuestions * 100).round() : 0;
+
+    final pendingIndex = _quizzes.indexWhere((q) => q['completed'] == false);
+    if (pendingIndex != -1) {
+      _quizzes[pendingIndex]['correctAnswers'] = correctAnswers;
+      _quizzes[pendingIndex]['percentage'] = percentage;
+      _quizzes[pendingIndex]['completed'] = true;
+    }
+
+    final quizResult = {
+      'topic': _currentQuizQuestions.isNotEmpty
+          ? _currentQuizQuestions.first['topic'] ?? 'Unknown Topic'
+          : 'Unknown Topic',
+      'totalQuestions': totalQuestions,
+      'correctAnswers': correctAnswers,
+      'percentage': percentage,
+      'date': DateTime.now().toIso8601String(),
+      'completed': true,
+      'timeSpent': 0,
+    };
+
+    _quizzes.add(quizResult);
+    notifyListeners();
+  }
+
+  void nextQuestion() {
+    if (_currentQuestionIndex < _currentQuizQuestions.length - 1) {
+      _currentQuestionIndex++;
+      notifyListeners();
+    }
+  }
+
+  void retakeQuiz() {
+    _currentQuestionIndex = 0;
+    _score = 0;
+    _userAnswers = [];
+    _isQuizCompleted = false;
+    notifyListeners();
+  }
+
+  void resetQuiz() {
+    _currentQuizQuestions = [];
+    _currentQuestionIndex = 0;
+    _score = 0;
+    _userAnswers = [];
+    _isLoading = false;
+    _isQuizCompleted = false;
+    _totalQuestions = 0;
+    notifyListeners();
+  }
+
+  Future<void> refreshStats() async {
+    await Future.delayed(const Duration(milliseconds: 500));
+    notifyListeners();
+  }
+
+  // Load demo data for testing
+  void loadDemoData() {
+    _quizzes = [
+      {
+        'topic': 'Mathematics',
+        'totalQuestions': 5,
+        'correctAnswers': 4,
+        'percentage': 80,
+        'date': DateTime.now().subtract(const Duration(days: 0)).toIso8601String(),
+        'completed': true,
+        'timeSpent': 5,
+      },
+      {
+        'topic': 'Science',
+        'totalQuestions': 5,
+        'correctAnswers': 3,
+        'percentage': 60,
+        'date': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
+        'completed': true,
+        'timeSpent': 4,
+      },
+      {
+        'topic': 'History',
+        'totalQuestions': 5,
+        'correctAnswers': 5,
+        'percentage': 100,
+        'date': DateTime.now().subtract(const Duration(days: 2)).toIso8601String(),
+        'completed': true,
+        'timeSpent': 6,
+      },
+    ];
+    notifyListeners();
+  }
+
+  void clearHistory() {
+    _quizzes.clear();
+    notifyListeners();
+  }
+
+  int get totalQuizzesTaken => _quizzes.where((q) => q['completed'] == true).length;
+
+  double get averageScore {
+    final completed = _quizzes.where((q) => q['completed'] == true).toList();
+    if (completed.isEmpty) return 0.0;
+    int total = 0;
+    for (var quiz in completed) {
+      total += quiz['percentage'] as int? ?? 0;
+    }
+    return total / completed.length;
   }
 }

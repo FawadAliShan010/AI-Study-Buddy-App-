@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/app_constants.dart';
-import 'glass_card.dart';
 
 class StudyStats extends StatelessWidget {
   final int studyTime;
   final int quizzesCompleted;
   final int notesCreated;
   final int streak;
-  final Function(String)? onStatTap;
+  final Function(String) onStatTap;
 
   const StudyStats({
     super.key,
@@ -16,95 +15,106 @@ class StudyStats extends StatelessWidget {
     required this.quizzesCompleted,
     required this.notesCreated,
     required this.streak,
-    this.onStatTap,
+    required this.onStatTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(
-          child: _buildStatCard(
-            icon: Icons.timer_rounded,
-            value: '$studyTime',
-            label: 'Study Time',
-            gradient: AppGradients.secondaryGradient,
-          ),
+        _buildStatCard(
+          'Study Time',
+          '${studyTime}m',
+          Icons.timer_rounded,
+          Colors.blue,
+              () => onStatTap('Study Time'),
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _buildStatCard(
-            icon: Icons.quiz_rounded,
-            value: '$quizzesCompleted',
-            label: 'Quizzes',
-            gradient: AppGradients.primaryGradient,
-          ),
+        const SizedBox(width: 12),
+        _buildStatCard(
+          'Quizzes',
+          '$quizzesCompleted',
+          Icons.quiz_rounded,
+          Colors.green,
+              () => onStatTap('Quizzes'),
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _buildStatCard(
-            icon: Icons.note_rounded,
-            value: '$notesCreated',
-            label: 'Notes',
-            gradient: AppGradients.accentGradient,
-          ),
+        const SizedBox(width: 12),
+        _buildStatCard(
+          'Notes',
+          '$notesCreated',
+          Icons.note_rounded,
+          Colors.orange,
+              () => onStatTap('Notes'),
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _buildStatCard(
-            icon: Icons.local_fire_department_rounded,
-            value: '$streak',
-            label: 'Streak',
-            gradient: const LinearGradient(
-              colors: [Color(0xFFFF6B6B), Color(0xFFFF8E53)],
-            ),
-          ),
+        const SizedBox(width: 12),
+        _buildStatCard(
+          'Streak',
+          '$streak🔥',
+          Icons.local_fire_department_rounded,
+          Colors.red,
+              () => onStatTap('Streak'),
         ),
       ],
     );
   }
 
-  Widget _buildStatCard({
-    required IconData icon,
-    required String value,
-    required String label,
-    required Gradient gradient,
-  }) {
-    return GestureDetector(
-      onTap: () => onStatTap?.call(label),
-      child: GlassCard(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                gradient: gradient,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                color: Colors.white,
-                size: 16,
-              ),
+  Widget _buildStatCard(
+      String label,
+      String value,
+      IconData icon,
+      Color color,
+      VoidCallback onTap,
+      ) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withOpacity(0.05),
+                Colors.white.withOpacity(0.02),
+              ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: GoogleFonts.orbitron(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+            borderRadius: BorderRadius.circular(AppConstants.defaultRadius),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.1),
             ),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                color: Colors.white60,
-                fontSize: 10,
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  icon,
+                  color: color,
+                  size: 20,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              Text(
+                value,
+                style: GoogleFonts.orbitron(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  color: Colors.white54,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
