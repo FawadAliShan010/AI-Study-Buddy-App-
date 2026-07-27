@@ -26,11 +26,9 @@ class QuizResultScreen extends StatelessWidget {
     return WillPopScope(
       onWillPop: () async {
         quizProvider.resetQuiz();
-        // Use pushAndRemoveUntil to go back to QuizScreen with bottom nav
-        Navigator.pushAndRemoveUntil(
+        Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const QuizScreen()),
-              (route) => false,
         );
         return false;
       },
@@ -75,19 +73,11 @@ class QuizResultScreen extends StatelessWidget {
                 ),
               ),
               onSelected: (value) {
-                if (value == 'go_to_quiz_questions') {
-                  // Navigate to quiz questions without resetting
+                if (value == 'go_to_quiz') {
+                  quizProvider.resetQuiz();
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (context) => const QuizQuestionScreen()),
-                  );
-                } else if (value == 'go_to_quiz_home') {
-                  quizProvider.resetQuiz();
-                  // Use pushAndRemoveUntil to go back to QuizScreen with bottom nav
-                  Navigator.pushAndRemoveUntil(
-                    context,
                     MaterialPageRoute(builder: (context) => const QuizScreen()),
-                        (route) => false,
                   );
                 } else if (value == 'retry_quiz') {
                   quizProvider.retakeQuiz();
@@ -95,33 +85,11 @@ class QuizResultScreen extends StatelessWidget {
                     context,
                     MaterialPageRoute(builder: (context) => const QuizQuestionScreen()),
                   );
-                } else if (value == 'close') {
-                  // Just close the popup
                 }
               },
               itemBuilder: (BuildContext context) => [
                 PopupMenuItem<String>(
-                  value: 'go_to_quiz_questions',
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.question_answer_rounded,
-                        color: Colors.blue,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Go to Questions',
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                PopupMenuItem<String>(
-                  value: 'go_to_quiz_home',
+                  value: 'go_to_quiz',
                   child: Row(
                     children: [
                       const Icon(
@@ -435,13 +403,11 @@ class QuizResultScreen extends StatelessWidget {
             child: ElevatedButton(
               onPressed: () {
                 provider.resetQuiz();
-                // Use pushAndRemoveUntil to go back to QuizScreen with bottom nav
-                Navigator.pushAndRemoveUntil(
+                Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
                     builder: (context) => const QuizScreen(),
                   ),
-                      (route) => false,
                 );
               },
               style: ElevatedButton.styleFrom(

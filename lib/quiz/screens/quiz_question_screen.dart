@@ -103,8 +103,6 @@ class _QuizQuestionScreenState extends State<QuizQuestionScreen> {
                 _showGoToQuizDialog(context, quizProvider);
               } else if (value == 'reset_quiz') {
                 _showResetQuizDialog(context, quizProvider);
-              } else if (value == 'quit_quiz') {
-                _showQuitQuizDialog(context, quizProvider);
               }
             },
             itemBuilder: (BuildContext context) => [
@@ -317,15 +315,13 @@ class _QuizQuestionScreenState extends State<QuizQuestionScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context); // Close dialog
-              // Reset quiz and navigate to quiz screen with bottom nav
+              // Reset quiz and navigate to quiz screen
               provider.resetQuiz();
-              // Use pushAndRemoveUntil to go back to QuizScreen with bottom nav
-              Navigator.pushAndRemoveUntil(
+              Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
                   builder: (context) => const QuizScreen(),
                 ),
-                    (route) => false,
               );
             },
             style: ElevatedButton.styleFrom(
@@ -406,72 +402,6 @@ class _QuizQuestionScreenState extends State<QuizQuestionScreen> {
             ),
             child: Text(
               'Reset',
-              style: GoogleFonts.inter(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showQuitQuizDialog(BuildContext context, QuizProvider provider) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A2E),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: Colors.white.withOpacity(0.1),
-          ),
-        ),
-        title: Text(
-          'Quit Quiz?',
-          style: GoogleFonts.inter(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        content: Text(
-          'Your progress will be lost. Are you sure you want to quit?',
-          style: GoogleFonts.inter(
-            color: Colors.white70,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.inter(
-                color: Colors.white54,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context); // Close dialog
-              // Reset quiz and navigate back to quiz screen with bottom nav
-              provider.resetQuiz();
-              // Use pushAndRemoveUntil to go back to QuizScreen with bottom nav
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => const QuizScreen()),
-                    (route) => false,
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: Text(
-              'Quit',
               style: GoogleFonts.inter(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
