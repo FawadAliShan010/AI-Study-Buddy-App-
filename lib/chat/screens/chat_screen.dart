@@ -3,12 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/providers/chat_provider.dart';
 import '../../../core/providers/upload_provider.dart';
 import '../../../core/constants/app_constants.dart';
-
+import '../../../core/models/upload_model.dart';
 import '../../core/services/groq_ai_service.dart';
-import '../widgets/file_attachment_dialogue.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/typing_indicator.dart';
 import '../widgets/suggestion_chips.dart';
@@ -62,7 +63,6 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
         actions: [
-          // Show upload status
           if (uploadProvider.isUploading)
             const Padding(
               padding: EdgeInsets.all(8.0),
@@ -236,7 +236,6 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       child: Column(
         children: [
-          // Upload progress bar
           if (uploadProvider.isUploading)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -258,7 +257,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 ],
               ),
             ),
-          // Context indicator
           if (chatProvider.hasContext)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -384,6 +382,8 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  // ============ SEND MESSAGE ============
+
   Future<void> _sendMessage(ChatProvider provider) async {
     final text = _controller.text.trim();
     if (text.isEmpty || provider.isLoading) return;
@@ -401,29 +401,56 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // ============ FILE ATTACHMENT DIALOG ============
+
   void _showFileAttachmentDialog(ChatProvider chatProvider, UploadProvider uploadProvider) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => FileAttachmentDialog(
-        onFileSelected: (file) async {
+      builder: (context) => _FileAttachmentDialog(
+        onFileSelected: (file, fileName, bytes) async {
           final user = FirebaseAuth.instance.currentUser;
           if (user == null) {
             _showErrorSnackBar('Please login to upload files');
             return;
           }
 
-          final success = await uploadProvider.uploadFile(
-            file: file,
-            userId: user.uid,
-            fieldName: 'files',
-          );
+          bool success;
+          String? fileUrl;
+          String? filePath;
+
+          if (bytes != null) {
+            // Web platform - upload using bytes
+            success = await uploadProvider.uploadFileWithBytes(
+              bytes: bytes,
+              fileName: fileName,
+              userId: user.uid,
+              folder: 'chat_attachments',
+              fieldName: 'files',
+            );
+          } else if (file != null) {
+            // Mobile platform - upload using File
+            success = await uploadProvider.uploadFile(
+              file: file,
+              userId: user.uid,
+              folder: 'chat_attachments',
+              fieldName: 'files',
+            );
+          } else {
+            _showErrorSnackBar('No file selected');
+            return;
+          }
 
           if (success && mounted) {
-            await chatProvider.sendMessage(
-                '📎 I uploaded a file: ${file.path.split('/').last}'
-            );
+            // Get the uploaded file URL
+            final uploadedFile = uploadProvider.files.last;
+            fileUrl = uploadedFile.url;
+            filePath = uploadedFile.path;
+
+            // Send message with file attachment
+            final message = '📎 Uploaded file: $fileName\n\nFile URL: $fileUrl';
+            await chatProvider.sendMessage(message);
 
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -444,6 +471,8 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
   }
+
+  // ============ VOICE RECORDING ============
 
   void _toggleVoiceRecording(ChatProvider provider) {
     setState(() {
@@ -470,6 +499,8 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // ============ UTILITY METHODS ============
+
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -494,5 +525,195 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     });
+  }
+}
+
+// ============ FILE ATTACHMENT DIALOG WIDGET ============
+
+class _FileAttachmentDialog extends StatefulWidget {
+  final Function(File?, String, List<int>?) onFileSelected;
+
+  const _FileAttachmentDialog({
+    required this.onFileSelected,
+  });
+
+  @override
+  State<_FileAttachmentDialog> createState() => _FileAttachmentDialogState();
+}
+
+class _FileAttachmentDialogState extends State<_FileAttachmentDialog> {
+  final ImagePicker _imagePicker = ImagePicker();
+  bool _isLoading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade900,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade600,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Attach File',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildOption(
+                icon: Icons.photo_library,
+                label: 'Gallery',
+                onTap: _isLoading ? null : () => _pickImage(ImageSource.gallery),
+              ),
+              _buildOption(
+                icon: Icons.photo_camera,
+                label: 'Camera',
+                onTap: _isLoading ? null : () => _pickImage(ImageSource.camera),
+              ),
+              _buildOption(
+                icon: Icons.folder,
+                label: 'Files',
+                onTap: _isLoading ? null : _pickFile,
+              ),
+            ],
+          ),
+          if (_isLoading) ...[
+            const SizedBox(height: 16),
+            const CircularProgressIndicator(),
+            const SizedBox(height: 8),
+            const Text(
+              'Processing...',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ],
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed: _isLoading ? null : () => Navigator.pop(context),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOption({
+    required IconData icon,
+    required String label,
+    VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: onTap == null ? Colors.grey.shade800 : Colors.grey.shade800,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              color: onTap == null ? Colors.grey.shade600 : Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              color: onTap == null ? Colors.grey.shade600 : Colors.white70,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============ PICK IMAGE ============
+
+  Future<void> _pickImage(ImageSource source) async {
+    setState(() => _isLoading = true);
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: source,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 80,
+      );
+
+      if (image != null) {
+        final file = File(image.path);
+        final fileName = image.name;
+
+        // Check if running on web
+        if (image.path.startsWith('http')) {
+          // Web - we need to get bytes
+          final bytes = await image.readAsBytes();
+          widget.onFileSelected(null, fileName, bytes);
+        } else {
+          // Mobile - use File
+          widget.onFileSelected(file, fileName, null);
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking image: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // ============ PICK FILE ============
+
+  Future<void> _pickFile() async {
+    setState(() => _isLoading = true);
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'md', 'rtf', 'jpg', 'jpeg', 'png', 'gif'],
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        final file = result.files.single;
+        final fileName = file.name;
+
+        if (file.bytes != null) {
+          // Web - use bytes
+          widget.onFileSelected(null, fileName, file.bytes);
+        } else if (file.path != null) {
+          // Mobile - use File
+          widget.onFileSelected(File(file.path!), fileName, null);
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking file: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 }
