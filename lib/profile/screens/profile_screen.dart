@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -5,11 +6,14 @@ import 'package:animate_do/animate_do.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/providers/study_provider.dart';
 import '../../../core/providers/theme_provider.dart';
+import '../../../core/providers/upload_provider.dart';
+import '../../../core/providers/user_profile_provider.dart';
 import '../../../core/services/firebase_service.dart';
 import '../../../core/utils/helpers.dart';
 import '../../core/Widgets/data_export_screen.dart';
@@ -30,12 +34,28 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _isRefreshing = false;
   bool _isSigningOut = false;
+  final ImagePicker _picker = ImagePicker();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserProfile();
+  }
+
+  void _loadUserProfile() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      context.read<UserProfileProvider>().loadProfile(user.uid);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
     final studyProvider = Provider.of<StudyProvider>(context);
     final themeProvider = Provider.of<ThemeProvider>(context);
+    final uploadProvider = Provider.of<UploadProvider>(context);
+    final profileProvider = Provider.of<UserProfileProvider>(context);
     final user = authProvider.user;
 
     return Scaffold(
@@ -60,6 +80,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
         actions: [
+          // Upload status indicator
+          if (uploadProvider.isUploading)
+            const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.blue,
+                ),
+              ),
+            ),
           IconButton(
             icon: _isRefreshing
                 ? const SizedBox(
@@ -68,7 +101,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: CircularProgressIndicator(strokeWidth: 2),
             )
                 : const Icon(Icons.refresh_rounded),
-            onPressed: _isRefreshing ? null : () => _refreshData(authProvider, studyProvider),
+            onPressed: _isRefreshing ? null : () => _refreshData(authProvider, studyProvider, profileProvider),
           ),
         ],
       ),
@@ -88,12 +121,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
             stops: const [0.0, 0.3, 0.6, 1.0],
           ),
         ),
-        child: SingleChildScrollView(
+        child: profileProvider.isLoading
+            ? const Center(
+          child: CircularProgressIndicator(),
+        )
+            : SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
               FadeInDown(
-                child: _buildProfileHeader(user, authProvider),
+                child: _buildProfileHeader(
+                  user,
+                  authProvider,
+                  profileProvider,
+                  uploadProvider,
+                ),
               ),
               const SizedBox(height: 24),
               FadeInUp(
@@ -103,6 +145,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 24),
               FadeInUp(
                 delay: const Duration(milliseconds: 300),
+                child: _buildFilesSection(profileProvider),
+              ),
+              const SizedBox(height: 24),
+              FadeInUp(
+                delay: const Duration(milliseconds: 350),
                 child: _buildSettingsSection(themeProvider),
               ),
               const SizedBox(height: 24),
@@ -118,7 +165,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildProfileHeader(User? user, AuthProvider authProvider) {
+  Widget _buildProfileHeader(
+      User? user,
+      AuthProvider authProvider,
+      UserProfileProvider profileProvider,
+      UploadProvider uploadProvider,
+      ) {
+    final photoURL = profileProvider.profile?.photoURL ?? user?.photoURL;
+
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -130,72 +184,113 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           Stack(
             children: [
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  gradient: AppGradients.secondaryGradient,
-                  shape: BoxShape.circle,
-                  boxShadow: AppShadows.neon,
-                ),
-                child: user?.photoURL != null
-                    ? ClipRRect(
-                  borderRadius: BorderRadius.circular(40),
-                  child: Image.network(
-                    user!.photoURL!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
-                    const Icon(Icons.person_rounded, color: Colors.white, size: 40),
+              // Profile Image with upload functionality
+              GestureDetector(
+                onTap: uploadProvider.isUploading ? null : () => _pickProfileImage(authProvider),
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    gradient: AppGradients.secondaryGradient,
+                    shape: BoxShape.circle,
+                    boxShadow: AppShadows.neon,
                   ),
-                )
-                    : const Center(
-                  child: Icon(
-                    Icons.person_rounded,
-                    color: Colors.white,
-                    size: 40,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(40),
+                    child: photoURL != null && photoURL.isNotEmpty
+                        ? Image.network(
+                      photoURL,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          color: Colors.grey.shade800,
+                          child: const Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
+                          ),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Center(
+                          child: Icon(
+                            Icons.person_rounded,
+                            color: Colors.white,
+                            size: 40,
+                          ),
+                        );
+                      },
+                    )
+                        : const Center(
+                      child: Icon(
+                        Icons.person_rounded,
+                        color: Colors.white,
+                        size: 40,
+                      ),
+                    ),
                   ),
                 ),
               ),
+              // Upload overlay
+              if (uploadProvider.isUploading)
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.black54,
+                  ),
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              // Camera icon
               Positioned(
                 bottom: 0,
                 right: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                  ),
-                  child: const Icon(
-                    Icons.camera_alt_rounded,
-                    color: Colors.white,
-                    size: 16,
+                child: GestureDetector(
+                  onTap: uploadProvider.isUploading ? null : () => _pickProfileImage(authProvider),
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: const Icon(
+                      Icons.camera_alt_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    ),
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          GestureDetector(
-            onTap: () => _editProfile(context, authProvider),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  user?.displayName ?? 'Student',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                user?.displayName ?? 'Student',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
                 ),
-                const SizedBox(width: 8),
-                const Icon(
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => _editProfile(context, authProvider),
+                child: const Icon(
                   Icons.edit_rounded,
                   color: Colors.white70,
                   size: 20,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
           Text(
             user?.email ?? '',
@@ -378,6 +473,176 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _buildFilesSection(UserProfileProvider profileProvider) {
+    final files = profileProvider.profile?.files ?? [];
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(AppConstants.defaultRadius),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.1),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Uploaded Files',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                '${files.length} files',
+                style: GoogleFonts.inter(
+                  color: Colors.white60,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (files.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 32),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.upload_file,
+                      size: 48,
+                      color: Colors.grey.shade600,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'No files uploaded yet',
+                      style: GoogleFonts.inter(
+                        color: Colors.grey.shade400,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Upload files from the chat screen',
+                      style: GoogleFonts.inter(
+                        color: Colors.grey.shade600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: files.map((file) {
+                final isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(
+                  file.fileType.toLowerCase(),
+                );
+                return Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade800,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.1),
+                    ),
+                  ),
+                  child: Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: isImage
+                            ? Image.network(
+                          file.url,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          height: double.infinity,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Container(
+                              color: Colors.grey.shade800,
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(
+                              Icons.broken_image,
+                              color: Colors.grey,
+                              size: 30,
+                            );
+                          },
+                        )
+                            : Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.insert_drive_file,
+                              color: Colors.grey.shade400,
+                              size: 30,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              file.fileName.length > 10
+                                  ? '${file.fileName.substring(0, 10)}...'
+                                  : file.fileName,
+                              style: GoogleFonts.inter(
+                                color: Colors.grey.shade400,
+                                fontSize: 8,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: GestureDetector(
+                          onTap: () => _deleteFile(file.id),
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.close,
+                              color: Colors.red,
+                              size: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSettingsSection(ThemeProvider themeProvider) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -554,15 +819,107 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // ============ PROFILE IMAGE METHODS ============
+
+  Future<void> _pickProfileImage(AuthProvider authProvider) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      Helpers.showSnackBar(context, 'Please login first', isError: true);
+      return;
+    }
+
+    final XFile? image = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 80,
+    );
+
+    if (image != null) {
+      final file = File(image.path);
+      final uploadProvider = context.read<UploadProvider>();
+      final profileProvider = context.read<UserProfileProvider>();
+
+      final success = await uploadProvider.uploadFile(
+        file: file,
+        userId: user.uid,
+        folder: 'profile',
+        isProfileImage: true,
+      );
+
+      if (success) {
+        await profileProvider.loadProfile(user.uid);
+        if (mounted) {
+          Helpers.showSnackBar(context, 'Profile image updated successfully!');
+        }
+      } else {
+        if (mounted) {
+          Helpers.showSnackBar(
+            context,
+            'Failed to update profile image: ${uploadProvider.error}',
+            isError: true,
+          );
+        }
+      }
+    }
+  }
+
+  // ============ FILE MANAGEMENT METHODS ============
+
+  Future<void> _deleteFile(String fileId) async {
+    final confirm = await Helpers.showConfirmationDialog(
+      context,
+      'Delete File',
+      'Are you sure you want to delete this file?',
+      confirmText: 'Delete',
+    );
+
+    if (!confirm) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      Helpers.showSnackBar(context, 'Please login first', isError: true);
+      return;
+    }
+
+    final uploadProvider = context.read<UploadProvider>();
+    final profileProvider = context.read<UserProfileProvider>();
+
+    final success = await uploadProvider.deleteFile(
+      userId: user.uid,
+      fileId: fileId,
+    );
+
+    if (success) {
+      await profileProvider.loadProfile(user.uid);
+      if (mounted) {
+        Helpers.showSnackBar(context, 'File deleted successfully');
+      }
+    } else {
+      if (mounted) {
+        Helpers.showSnackBar(
+          context,
+          'Failed to delete file: ${uploadProvider.error}',
+          isError: true,
+        );
+      }
+    }
+  }
+
   // ============ ACTION METHODS ============
 
-  Future<void> _refreshData(AuthProvider authProvider, StudyProvider studyProvider) async {
+  Future<void> _refreshData(
+      AuthProvider authProvider,
+      StudyProvider studyProvider,
+      UserProfileProvider profileProvider,
+      ) async {
     setState(() => _isRefreshing = true);
     try {
       await authProvider.refreshUser();
       final userId = authProvider.userId;
       if (userId!.isNotEmpty) {
         await studyProvider.loadStudyData(userId);
+        await profileProvider.loadProfile(userId);
       }
       if (mounted) {
         Helpers.showSnackBar(context, 'Data refreshed successfully');
@@ -587,6 +944,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
     if (result == true && mounted) {
       await authProvider.refreshUser();
+      final userId = authProvider.userId;
+      if (userId!.isNotEmpty) {
+        await context.read<UserProfileProvider>().loadProfile(userId);
+      }
       setState(() {});
     }
   }
@@ -632,7 +993,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       await FirebaseService().signOut();
       if (mounted) {
-        // Use pushAndRemoveUntil to go to LoginScreen and clear all routes
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -655,7 +1015,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       await authProvider.deleteAccount();
       if (mounted) {
-        // Use pushAndRemoveUntil to go to LoginScreen and clear all routes
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const LoginScreen()),

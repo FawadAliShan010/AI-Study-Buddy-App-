@@ -9,14 +9,15 @@ import 'core/providers/study_provider.dart';
 import 'core/providers/chat_provider.dart';
 import 'core/providers/quiz_provider.dart';
 import 'core/providers/theme_provider.dart';
+import 'core/providers/upload_provider.dart'; // ✅ ADD THIS
+import 'core/providers/user_profile_provider.dart'; // ✅ ADD THIS
 import 'core/services/local_storage_service.dart';
-import 'core/config/supabase_config.dart'; // ✅ ADD THIS
+import 'core/config/supabase_config.dart';
 import 'features/splash/screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load .env file
   await dotenv.load(fileName: ".env");
 
   try {
@@ -35,9 +36,9 @@ void main() async {
     debugPrint('Firebase initialization error: $e');
   }
 
-  // ✅ INITIALIZE SUPABASE
   try {
     await SupabaseConfig.initialize();
+    print('✅ Supabase initialized');
   } catch (e) {
     debugPrint('Supabase initialization error: $e');
   }
@@ -64,6 +65,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => StudyProvider()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
         ChangeNotifierProvider(create: (_) => QuizProvider()),
+        ChangeNotifierProvider(create: (_) => UploadProvider()), // ✅ ADD THIS
+        ChangeNotifierProvider(create: (_) => UserProfileProvider()), // ✅ ADD THIS
       ],
       child: MaterialApp(
         title: 'AI Study Buddy',

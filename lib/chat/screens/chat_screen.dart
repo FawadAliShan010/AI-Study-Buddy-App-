@@ -1,14 +1,17 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:animate_do/animate_do.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/providers/chat_provider.dart';
+import '../../../core/providers/upload_provider.dart';
 import '../../../core/constants/app_constants.dart';
+
 import '../../core/services/groq_ai_service.dart';
 import '../widgets/file_attachment_dialogue.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/typing_indicator.dart';
 import '../widgets/suggestion_chips.dart';
-
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -32,6 +35,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final chatProvider = Provider.of<ChatProvider>(context);
+    final uploadProvider = Provider.of<UploadProvider>(context);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -58,7 +62,19 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
         actions: [
-          // Clear chat button
+          // Show upload status
+          if (uploadProvider.isUploading)
+            const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             onPressed: () {
@@ -100,7 +116,38 @@ class _ChatScreenState extends State<ChatScreen> {
                 : _buildChatList(chatProvider),
           ),
           if (chatProvider.isLoading) const TypingIndicator(),
-          _buildInputBar(chatProvider),
+          if (uploadProvider.error != null)
+            _buildErrorBanner(uploadProvider),
+          _buildInputBar(chatProvider, uploadProvider),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorBanner(UploadProvider uploadProvider) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.red.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.red.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Colors.red, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              uploadProvider.error!,
+              style: const TextStyle(color: Colors.red, fontSize: 12),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 16),
+            onPressed: uploadProvider.clearError,
+            color: Colors.red,
+          ),
         ],
       ),
     );
@@ -176,7 +223,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildInputBar(ChatProvider provider) {
+  Widget _buildInputBar(ChatProvider chatProvider, UploadProvider uploadProvider) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -189,8 +236,30 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       child: Column(
         children: [
-          // Context indicator (shows when context is being used)
-          if (provider.hasContext)
+          // Upload progress bar
+          if (uploadProvider.isUploading)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Column(
+                children: [
+                  LinearProgressIndicator(
+                    value: uploadProvider.uploadProgress,
+                    backgroundColor: Colors.grey.shade800,
+                    valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Uploading... ${(uploadProvider.uploadProgress * 100).toInt()}%',
+                    style: TextStyle(
+                      color: Colors.grey.shade400,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          // Context indicator
+          if (chatProvider.hasContext)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               margin: const EdgeInsets.only(bottom: 8),
@@ -204,7 +273,7 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                   Icon(
+                  Icon(
                     Icons.memory_rounded,
                     size: 16,
                     color: AppColors.primary,
@@ -219,7 +288,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                   const Spacer(),
                   GestureDetector(
-                    onTap: () => provider.clearContext(),
+                    onTap: () => chatProvider.clearContext(),
                     child: const Icon(
                       Icons.close,
                       size: 16,
@@ -231,26 +300,33 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           Row(
             children: [
-              // Voice input button
               IconButton(
                 icon: Icon(
                   _isRecording ? Icons.mic_rounded : Icons.mic_none_rounded,
                   color: _isRecording ? Colors.red : Colors.white70,
                 ),
-                onPressed: () => _toggleVoiceRecording(provider),
+                onPressed: uploadProvider.isUploading
+                    ? null
+                    : () => _toggleVoiceRecording(chatProvider),
               ),
-              // File attachment button
               IconButton(
                 icon: const Icon(Icons.attach_file, color: Colors.white70),
-                onPressed: () => _showFileAttachmentDialog(provider),
+                onPressed: uploadProvider.isUploading
+                    ? null
+                    : () => _showFileAttachmentDialog(chatProvider, uploadProvider),
               ),
               Expanded(
                 child: TextField(
                   controller: _controller,
                   style: const TextStyle(color: Colors.white),
+                  enabled: !uploadProvider.isUploading,
                   decoration: InputDecoration(
-                    hintText: 'Ask a question...',
-                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                    hintText: uploadProvider.isUploading
+                        ? 'Uploading file...'
+                        : 'Ask a question...',
+                    hintStyle: TextStyle(
+                      color: Colors.white.withOpacity(0.3),
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(AppConstants.defaultRadius),
                       borderSide: BorderSide.none,
@@ -262,22 +338,25 @@ class _ChatScreenState extends State<ChatScreen> {
                       vertical: 8,
                     ),
                   ),
-                  onSubmitted: (value) => _sendMessage(provider),
-                  onChanged: (value) => provider.setTyping(value.isNotEmpty),
+                  onSubmitted: (value) => _sendMessage(chatProvider),
+                  onChanged: (value) => chatProvider.setTyping(value.isNotEmpty),
                 ),
               ),
               const SizedBox(width: 8),
-              // Send button with loading state
               Container(
                 decoration: BoxDecoration(
-                  gradient: provider.isLoading
+                  gradient: chatProvider.isLoading || uploadProvider.isUploading
                       ? null
                       : AppGradients.secondaryGradient,
-                  color: provider.isLoading ? Colors.grey[800] : null,
+                  color: chatProvider.isLoading || uploadProvider.isUploading
+                      ? Colors.grey[800]
+                      : null,
                   shape: BoxShape.circle,
-                  boxShadow: provider.isLoading ? null : AppShadows.glow,
+                  boxShadow: chatProvider.isLoading || uploadProvider.isUploading
+                      ? null
+                      : AppShadows.glow,
                 ),
-                child: provider.isLoading
+                child: chatProvider.isLoading || uploadProvider.isUploading
                     ? const SizedBox(
                   width: 48,
                   height: 48,
@@ -294,7 +373,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 )
                     : IconButton(
                   icon: const Icon(Icons.send_rounded, color: Colors.white),
-                  onPressed: () => _sendMessage(provider),
+                  onPressed: () => _sendMessage(chatProvider),
                   padding: const EdgeInsets.all(8),
                 ),
               ),
@@ -322,26 +401,44 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _showFileAttachmentDialog(ChatProvider provider) {
+  void _showFileAttachmentDialog(ChatProvider chatProvider, UploadProvider uploadProvider) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) => FileAttachmentDialog(
         onFileSelected: (file) async {
-          try {
-            await provider.attachFile(file);
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('File attached successfully'),
-                  backgroundColor: Colors.green,
+          final user = FirebaseAuth.instance.currentUser;
+          if (user == null) {
+            _showErrorSnackBar('Please login to upload files');
+            return;
+          }
+
+          final success = await uploadProvider.uploadFile(
+            file: file,
+            userId: user.uid,
+            fieldName: 'files',
+          );
+
+          if (success && mounted) {
+            await chatProvider.sendMessage(
+                '📎 I uploaded a file: ${file.path.split('/').last}'
+            );
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('File uploaded successfully!'),
+                backgroundColor: Colors.green,
+                behavior: SnackBarBehavior.floating,
+                margin: EdgeInsets.all(16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
                 ),
-              );
-            }
-          } catch (e) {
-            if (mounted) {
-              _showErrorSnackBar('Failed to attach file: $e');
-            }
+              ),
+            );
+            Navigator.pop(context);
+          } else if (mounted) {
+            _showErrorSnackBar(uploadProvider.error ?? 'Upload failed');
           }
         },
       ),
@@ -354,7 +451,6 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     if (_isRecording) {
-      // Start recording
       provider.startVoiceRecording().then((text) {
         if (mounted) {
           setState(() => _isRecording = false);
@@ -370,7 +466,6 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       });
     } else {
-      // Cancel recording
       provider.stopVoiceRecording();
     }
   }

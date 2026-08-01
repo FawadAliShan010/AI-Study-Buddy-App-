@@ -1,9 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/providers/study_provider.dart';
+import '../../../core/providers/upload_provider.dart';
 import '../../../core/utils/helpers.dart';
 import '../../core/services/groq_ai_service.dart';
 import '../widgets/summary_card.dart';
@@ -21,16 +25,35 @@ class SummaryScreen extends StatefulWidget {
 class _SummaryScreenState extends State<SummaryScreen> {
   final TextEditingController _textController = TextEditingController();
   bool _isLoading = false;
+  bool _isUploading = false;
   String? _summaryResult;
+  File? _selectedFile;
+  String? _selectedFileName;
+  String? _uploadedFileUrl;
 
   @override
   Widget build(BuildContext context) {
     final studyProvider = Provider.of<StudyProvider>(context);
+    final uploadProvider = Provider.of<UploadProvider>(context);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Smart Summary'),
+        actions: [
+          if (_isUploading || uploadProvider.isUploading)
+            const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.blue,
+                ),
+              ),
+            ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -59,7 +82,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
             const SizedBox(height: 32),
             FadeInUp(
               delay: const Duration(milliseconds: 300),
-              child: _buildInputSection(),
+              child: _buildInputSection(uploadProvider),
             ),
             const SizedBox(height: 20),
             if (_isLoading) ...[
@@ -93,7 +116,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
   }
 
-  Widget _buildInputSection() {
+  Widget _buildInputSection(UploadProvider uploadProvider) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.05),
@@ -104,6 +127,82 @@ class _SummaryScreenState extends State<SummaryScreen> {
       ),
       child: Column(
         children: [
+          // File upload status
+          if (_selectedFile != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.file_present_rounded,
+                    color: Colors.blue,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _selectedFileName ?? 'File selected',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (_uploadedFileUrl != null)
+                          Text(
+                            'Uploaded to Supabase ✓',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontSize: 12,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: _isUploading ? null : _clearFileSelection,
+                    child: const Icon(
+                      Icons.close,
+                      color: Colors.white54,
+                      size: 20,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // Upload progress
+          if (_isUploading || uploadProvider.isUploading)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  LinearProgressIndicator(
+                    value: uploadProvider.uploadProgress,
+                    backgroundColor: Colors.grey.shade800,
+                    valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Uploading... ${(uploadProvider.uploadProgress * 100).toInt()}%',
+                    style: GoogleFonts.inter(
+                      color: Colors.white60,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          // Text input
           Container(
             height: 150,
             padding: const EdgeInsets.all(16),
@@ -112,8 +211,11 @@ class _SummaryScreenState extends State<SummaryScreen> {
               maxLines: null,
               expands: true,
               style: const TextStyle(color: Colors.white),
+              enabled: !_isUploading && !uploadProvider.isUploading,
               decoration: InputDecoration(
-                hintText: 'Paste your text here to summarize...',
+                hintText: _selectedFile != null
+                    ? 'File selected. Click Summarize to process...'
+                    : 'Paste your text here to summarize...',
                 hintStyle: TextStyle(
                   color: Colors.white.withOpacity(0.3),
                 ),
@@ -132,15 +234,32 @@ class _SummaryScreenState extends State<SummaryScreen> {
             ),
             child: Row(
               children: [
+                // Upload File Button
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: _isLoading ? null : _uploadFile,
-                    icon: const Icon(Icons.upload_file_rounded),
-                    label: const Text('Upload File'),
+                    onPressed: (_isLoading || _isUploading || uploadProvider.isUploading)
+                        ? null
+                        : _uploadFile,
+                    icon: Icon(
+                      _selectedFile != null
+                          ? Icons.check_circle_rounded
+                          : Icons.upload_file_rounded,
+                      color: _selectedFile != null ? Colors.green : null,
+                    ),
+                    label: Text(
+                      _selectedFile != null
+                          ? 'File Ready'
+                          : 'Upload File',
+                      style: TextStyle(
+                        color: _selectedFile != null ? Colors.green : null,
+                      ),
+                    ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white70,
                       side: BorderSide(
-                        color: Colors.white.withOpacity(0.2),
+                        color: _selectedFile != null
+                            ? Colors.green
+                            : Colors.white.withOpacity(0.2),
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(
@@ -151,6 +270,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
                   ),
                 ),
                 const SizedBox(width: 12),
+                // Summarize Button
                 Container(
                   height: 48,
                   decoration: BoxDecoration(
@@ -159,9 +279,11 @@ class _SummaryScreenState extends State<SummaryScreen> {
                     boxShadow: AppShadows.neon,
                   ),
                   child: ElevatedButton(
-                    onPressed: _isLoading || _textController.text.isEmpty
+                    onPressed: (_isLoading || _isUploading || uploadProvider.isUploading)
                         ? null
-                        : _summarize,
+                        : (_textController.text.isNotEmpty || _selectedFile != null)
+                        ? _summarize
+                        : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.transparent,
                       shadowColor: Colors.transparent,
@@ -237,7 +359,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
               ),
               const SizedBox(width: 4),
               Text(
-                'AI-generated summary • ${_textController.text.split(' ').length} words',
+                'AI-generated summary • ${_textController.text.split(' ').length} words${_selectedFile != null ? ' • File: ${_selectedFileName ?? ""}' : ''}',
                 style: GoogleFonts.inter(
                   color: Colors.white38,
                   fontSize: 12,
@@ -300,7 +422,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) =>  QuizScreen(),
+                        builder: (context) => const QuizScreen(),
                       ),
                     );
                   } else {
@@ -386,9 +508,144 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
   }
 
+  // ============ FILE UPLOAD METHODS ============
+  Future<void> _uploadFile() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'md', 'rtf'],
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.single;
+      final fileName = file.name;
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        Helpers.showSnackBar(context, 'Please login first', isError: true);
+        return;
+      }
+
+      setState(() {
+        _selectedFileName = fileName;
+        _isUploading = true;
+        _uploadedFileUrl = null;
+      });
+
+      final uploadProvider = Provider.of<UploadProvider>(context, listen: false);
+
+      // Platform-specific upload
+      bool success;
+      if (file.bytes != null) {
+        // Web platform
+        success = await uploadProvider.uploadFileWithBytes(
+          bytes: file.bytes!,
+          fileName: fileName,
+          userId: user.uid,
+          folder: 'summaries',
+          fieldName: 'files',
+        );
+
+        if (success) {
+          // Extract text from bytes for web
+          final fileContent = String.fromCharCodes(file.bytes!);
+          setState(() {
+            _textController.text = fileContent;
+          });
+        }
+      } else if (file.path != null) {
+        // Mobile platform
+        final fileObj = File(file.path!);
+        success = await uploadProvider.uploadFile(
+          file: fileObj,
+          userId: user.uid,
+          folder: 'summaries',
+          fieldName: 'files',
+        );
+
+        if (success) {
+          // Extract text from file for mobile
+          final fileContent = await fileObj.readAsString();
+          setState(() {
+            _textController.text = fileContent;
+          });
+        }
+      } else {
+        throw Exception('Unsupported file format');
+      }
+
+      if (success) {
+        setState(() {
+          _isUploading = false;
+          _uploadedFileUrl = uploadProvider.files.last.url;
+        });
+        Helpers.showSnackBar(context, 'File uploaded successfully!');
+      } else {
+        setState(() {
+          _isUploading = false;
+          _selectedFileName = null;
+        });
+        Helpers.showSnackBar(
+          context,
+          'Failed to upload file: ${uploadProvider.error}',
+          isError: true,
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isUploading = false;
+        _selectedFileName = null;
+      });
+      Helpers.showSnackBar(context, 'Failed to upload file: $e', isError: true);
+    }
+  }
+
+  Future<String> _extractFileContent(File file) async {
+    try {
+      // For text files, read directly
+      final extension = file.path.split('.').last.toLowerCase();
+      if (['txt', 'md', 'rtf'].contains(extension)) {
+        return await file.readAsString();
+      }
+
+      // For other files (PDF, DOC, DOCX), we'll use the file name as a placeholder
+      // In production, you'd want to use a package like `flutter_pdfview` or
+      // `docx` to extract text
+      return 'File uploaded: ${file.path.split('/').last}\n\nPlease paste the content manually or use the chat to discuss this file.';
+    } catch (e) {
+      print('Error extracting file content: $e');
+      return '';
+    }
+  }
+
+  void _clearFileSelection() {
+    setState(() {
+      _selectedFile = null;
+      _selectedFileName = null;
+      _uploadedFileUrl = null;
+      _isUploading = false;
+    });
+  }
+
+  // ============ SUMMARIZE METHOD ============
+
   Future<void> _summarize() async {
-    final text = _textController.text.trim();
-    if (text.isEmpty) return;
+    String text = _textController.text.trim();
+
+    // If we have a file but no text, use the file path as context
+    if (text.isEmpty && _selectedFile != null) {
+      text = await _extractFileContent(_selectedFile!);
+      if (text.isEmpty) {
+        text = 'Please analyze this file: ${_selectedFileName ?? "uploaded file"}';
+      }
+    }
+
+    if (text.isEmpty) {
+      Helpers.showSnackBar(context, 'Please enter text or upload a file', isError: true);
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -406,11 +663,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
       setState(() => _isLoading = false);
       Helpers.showSnackBar(context, 'Failed to generate summary: $e', isError: true);
     }
-  }
-
-  Future<void> _uploadFile() async {
-    // TODO: Implement file upload
-    Helpers.showSnackBar(context, 'File upload coming soon!');
   }
 
   @override
