@@ -33,6 +33,57 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  // ============ TEST UPLOAD METHOD ============
+
+  void _testUpload() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        print('❌ No user logged in');
+        _showErrorSnackBar('Please login first');
+        return;
+      }
+
+      print('✅ User ID: ${user.uid}');
+      print('✅ User Email: ${user.email}');
+
+      // Test with a simple text file
+      final testContent = 'Test upload at ${DateTime.now()}';
+      final tempFile = File('test_${DateTime.now().millisecondsSinceEpoch}.txt');
+      await tempFile.writeAsString(testContent);
+
+      print('📤 Uploading test file...');
+      print('📤 File: ${tempFile.path}');
+
+      final uploadProvider = Provider.of<UploadProvider>(context, listen: false);
+      final success = await uploadProvider.uploadFile(
+        file: tempFile,
+        userId: user.uid,
+        folder: 'test',
+        fieldName: 'files',
+      );
+
+      if (success) {
+        print('✅ Upload successful!');
+        print('✅ File URL: ${uploadProvider.files.last.url}');
+        _showSuccessSnackBar('Test upload successful! 🎉');
+      } else {
+        print('❌ Upload failed: ${uploadProvider.error}');
+        _showErrorSnackBar('Upload failed: ${uploadProvider.error}');
+      }
+
+      // Clean up
+      try {
+        await tempFile.delete();
+      } catch (e) {
+        print('Could not delete test file: $e');
+      }
+    } catch (e) {
+      print('❌ Test error: $e');
+      _showErrorSnackBar('Error: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final chatProvider = Provider.of<ChatProvider>(context);
@@ -63,6 +114,12 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
         actions: [
+          // ✅ TEST UPLOAD BUTTON - ADDED HERE
+          IconButton(
+            icon: const Icon(Icons.cloud_upload, color: Colors.green),
+            onPressed: uploadProvider.isUploading ? null : _testUpload,
+            tooltip: 'Test Upload',
+          ),
           if (uploadProvider.isUploading)
             const Padding(
               padding: EdgeInsets.all(8.0),
@@ -213,9 +270,9 @@ class _ChatScreenState extends State<ChatScreen> {
         return FadeInUp(
           delay: Duration(milliseconds: isLastMessage ? 100 : 0),
           child: MessageBubble(
-            message: message['content'],
-            isUser: message['isUser'],
-            timestamp: DateTime.parse(message['timestamp']),
+            message: message['content'] ?? '',
+            isUser: message['isUser'] ?? false,
+            timestamp: DateTime.parse(message['timestamp'] ?? DateTime.now().toIso8601String()),
             isError: message['isError'] ?? false,
           ),
         );
@@ -416,56 +473,64 @@ class _ChatScreenState extends State<ChatScreen> {
             return;
           }
 
-          bool success;
-          String? fileUrl;
-          String? filePath;
+          try {
+            bool success = false;
+            UploadModel? uploadedFile;
 
-          if (bytes != null) {
-            // Web platform - upload using bytes
-            success = await uploadProvider.uploadFileWithBytes(
-              bytes: bytes,
-              fileName: fileName,
-              userId: user.uid,
-              folder: 'chat_attachments',
-              fieldName: 'files',
-            );
-          } else if (file != null) {
-            // Mobile platform - upload using File
-            success = await uploadProvider.uploadFile(
-              file: file,
-              userId: user.uid,
-              folder: 'chat_attachments',
-              fieldName: 'files',
-            );
-          } else {
-            _showErrorSnackBar('No file selected');
-            return;
-          }
+            if (bytes != null) {
+              // Web platform - upload using bytes
+              success = await uploadProvider.uploadFileWithBytes(
+                bytes: bytes,
+                fileName: fileName,
+                userId: user.uid,
+                folder: 'chat_attachments',
+                fieldName: 'files',
+              );
+              if (success && uploadProvider.files.isNotEmpty) {
+                uploadedFile = uploadProvider.files.last;
+              }
+            } else if (file != null) {
+              // Mobile platform - upload using File
+              success = await uploadProvider.uploadFile(
+                file: file,
+                userId: user.uid,
+                folder: 'chat_attachments',
+                fieldName: 'files',
+              );
+              if (success && uploadProvider.files.isNotEmpty) {
+                uploadedFile = uploadProvider.files.last;
+              }
+            } else {
+              _showErrorSnackBar('No file selected');
+              return;
+            }
 
-          if (success && mounted) {
-            // Get the uploaded file URL
-            final uploadedFile = uploadProvider.files.last;
-            fileUrl = uploadedFile.url;
-            filePath = uploadedFile.path;
+            if (success && mounted && uploadedFile != null) {
+              // Attach file to chat and send message
+              chatProvider.attachFile(uploadedFile);
+              await chatProvider.sendMessage(
+                  '📎 Uploaded file: ${uploadedFile.fileName}\n\n🔗 URL: ${uploadedFile.url}'
+              );
 
-            // Send message with file attachment
-            final message = '📎 Uploaded file: $fileName\n\nFile URL: $fileUrl';
-            await chatProvider.sendMessage(message);
-
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('File uploaded successfully!'),
-                backgroundColor: Colors.green,
-                behavior: SnackBarBehavior.floating,
-                margin: EdgeInsets.all(16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(12)),
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('File uploaded successfully!'),
+                  backgroundColor: Colors.green,
+                  behavior: SnackBarBehavior.floating,
+                  margin: EdgeInsets.all(16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                  ),
                 ),
-              ),
-            );
-            Navigator.pop(context);
-          } else if (mounted) {
-            _showErrorSnackBar(uploadProvider.error ?? 'Upload failed');
+              );
+              Navigator.pop(context);
+            } else if (mounted) {
+              _showErrorSnackBar(uploadProvider.error ?? 'Upload failed');
+            }
+          } catch (e) {
+            if (mounted) {
+              _showErrorSnackBar('Error: $e');
+            }
           }
         },
       ),
@@ -506,6 +571,20 @@ class _ChatScreenState extends State<ChatScreen> {
       SnackBar(
         content: Text(message),
         backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    );
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green,
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(
@@ -628,7 +707,7 @@ class _FileAttachmentDialogState extends State<_FileAttachmentDialog> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: onTap == null ? Colors.grey.shade800 : Colors.grey.shade800,
+              color: Colors.grey.shade800,
               shape: BoxShape.circle,
             ),
             child: Icon(
@@ -663,23 +742,23 @@ class _FileAttachmentDialogState extends State<_FileAttachmentDialog> {
       );
 
       if (image != null) {
-        final file = File(image.path);
         final fileName = image.name;
 
-        // Check if running on web
+        // For web, path may be a network URL
         if (image.path.startsWith('http')) {
-          // Web - we need to get bytes
           final bytes = await image.readAsBytes();
           widget.onFileSelected(null, fileName, bytes);
         } else {
-          // Mobile - use File
+          final file = File(image.path);
           widget.onFileSelected(file, fileName, null);
         }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking image: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error picking image: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -709,9 +788,11 @@ class _FileAttachmentDialogState extends State<_FileAttachmentDialog> {
         }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking file: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error picking file: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
