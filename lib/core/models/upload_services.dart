@@ -11,7 +11,6 @@ class UploadService {
   final SupabaseService _supabaseService = SupabaseService();
   final FirebaseService _firebaseService = FirebaseService();
 
-  // ============ UPLOAD FILE (MOBILE) ============
 
   Future<Map<String, dynamic>> uploadFile({
     required File file,
