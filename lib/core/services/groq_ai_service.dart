@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
@@ -17,10 +18,11 @@ class GroqApiService {
   static const String _baseUrl = 'https://api.groq.com/openai/v1';
   static const String _model = 'llama-3.3-70b-versatile';
 
-  // In production, get this from secure storage or environment variables
   static String get _apiKey => dotenv.env['GROQ_API_KEY'] ?? '';
 
   final http.Client _client = http.Client();
+
+  // ============ CHAT RESPONSE ============
 
   Future<String> getChatResponse(
       String message, {
@@ -29,6 +31,11 @@ class GroqApiService {
         int maxTokens = 1024,
       }) async {
     try {
+      // Check API key
+      if (_apiKey.isEmpty) {
+        throw GroqApiException('GROQ_API_KEY not found in .env file. Please add your Groq API key.');
+      }
+
       // Build messages list with history
       final List<Map<String, String>> messages = [];
 
@@ -38,9 +45,10 @@ class GroqApiService {
         'content': 'You are an AI study assistant. Help students with their academic questions. Provide clear, accurate, and helpful explanations. If you don\'t know something, say so. Use examples when helpful.',
       });
 
-      // Add history
+      // Add history (limit to last 10 messages for context)
       if (history != null && history.isNotEmpty) {
-        messages.addAll(history);
+        final recentHistory = history.length > 10 ? history.sublist(history.length - 10) : history;
+        messages.addAll(recentHistory);
       }
 
       // Add current message
@@ -71,8 +79,13 @@ class GroqApiService {
         final data = json.decode(response.body);
         return data['choices'][0]['message']['content'] as String;
       } else {
-        final error = json.decode(response.body);
-        final errorMessage = error['error']['message'] ?? 'Unknown error occurred';
+        String errorMessage = 'Unknown error occurred';
+        try {
+          final error = json.decode(response.body);
+          errorMessage = error['error']?['message'] ?? 'Unknown error occurred';
+        } catch (e) {
+          errorMessage = 'HTTP ${response.statusCode}: ${response.reasonPhrase}';
+        }
         throw GroqApiException(errorMessage, response.statusCode);
       }
     } catch (e) {
@@ -81,9 +94,86 @@ class GroqApiService {
     }
   }
 
-  // ✅ UPDATED: Generate quiz with proper JSON format
+  // ============ PROCESS FILE ============
+
+  Future<String> processFile(dynamic file) async {
+    try {
+      if (file == null) {
+        return 'No file provided';
+      }
+
+      // Handle different file types
+      if (file is File) {
+        try {
+          final fileName = file.path.split('/').last;
+          final fileSize = await file.length();
+          final fileExt = file.path.split('.').last.toLowerCase();
+
+          // For text files, read content
+          if (['txt', 'md', 'rtf', 'csv', 'json', 'xml', 'html'].contains(fileExt)) {
+            final content = await file.readAsString();
+            final preview = content.length > 500 ? '${content.substring(0, 500)}...' : content;
+            return '📄 File: $fileName\n📊 Size: ${_formatFileSize(fileSize)}\n📝 Content Preview:\n$preview';
+          }
+          // For image files
+          else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].contains(fileExt)) {
+            return '🖼️ Image: $fileName\n📊 Size: ${_formatFileSize(fileSize)}\n📐 Type: $fileExt\n\nThis is an image file. You can ask questions about what you see in this image.';
+          }
+          // For document files
+          else if (['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'].contains(fileExt)) {
+            return '📑 Document: $fileName\n📊 Size: ${_formatFileSize(fileSize)}\n📐 Type: $fileExt\n\nThis is a document file. You can ask questions about the content.';
+          }
+          // For video/audio
+          else if (['mp4', 'avi', 'mov', 'mp3', 'wav', 'aac'].contains(fileExt)) {
+            return '🎬 Media: $fileName\n📊 Size: ${_formatFileSize(fileSize)}\n📐 Type: $fileExt\n\nThis is a media file. You can ask questions about it.';
+          }
+          // Default
+          else {
+            return '📎 File: $fileName\n📊 Size: ${_formatFileSize(fileSize)}\n📐 Type: $fileExt\n\nFile uploaded successfully. You can ask questions about this file.';
+          }
+        } catch (e) {
+          return '📎 File attached: ${file.path.split('/').last} (Error reading content: $e)';
+        }
+      }
+      // Handle bytes (for web)
+      else if (file is List<int>) {
+        return '📎 File attached (${_formatFileSize(file.length)} bytes). You can ask questions about this file.';
+      }
+      // Handle string content
+      else if (file is String) {
+        final preview = file.length > 500 ? '${file.substring(0, 500)}...' : file;
+        return '📝 Text content:\n$preview';
+      }
+      // Handle map
+      else if (file is Map) {
+        return '📋 Data: ${file.keys.join(', ')}';
+      }
+      // Handle list
+      else if (file is List) {
+        return '📋 List with ${file.length} items';
+      }
+
+      return '📎 File attached: ${file.runtimeType}';
+    } catch (e) {
+      return 'Error processing file: $e';
+    }
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  // ============ GENERATE QUIZ ============
+
   Future<String> generateQuiz(String topic, int numberOfQuestions) async {
     try {
+      if (_apiKey.isEmpty) {
+        throw GroqApiException('GROQ_API_KEY not found in .env file');
+      }
+
       final prompt = '''
 Generate $numberOfQuestions multiple-choice quiz questions about "$topic".
 
@@ -105,7 +195,6 @@ Requirements:
 - The correctAnswer must exactly match one of the options
 - Make questions educational and appropriately challenging
 - Ensure the JSON is valid and properly formatted
-- Do not include any text outside the JSON array
 ''';
 
       final response = await getChatResponse(
@@ -114,17 +203,17 @@ Requirements:
         maxTokens: 2000,
       );
 
-      // Clean the response to ensure it's valid JSON
+      // Clean the response
       String cleanedResponse = response.trim();
 
-      // Remove markdown code blocks if present
+      // Remove markdown code blocks
       if (cleanedResponse.contains('```json')) {
         cleanedResponse = cleanedResponse.split('```json')[1].split('```')[0].trim();
       } else if (cleanedResponse.contains('```')) {
         cleanedResponse = cleanedResponse.split('```')[1].split('```')[0].trim();
       }
 
-      // Validate JSON before returning
+      // Validate JSON
       try {
         final List<dynamic> parsed = jsonDecode(cleanedResponse);
         if (parsed.isEmpty) {
@@ -132,7 +221,7 @@ Requirements:
         }
         return cleanedResponse;
       } catch (e) {
-        // If parsing fails, try to extract JSON from the response
+        // Try to extract JSON from response
         final startIndex = cleanedResponse.indexOf('[');
         final endIndex = cleanedResponse.lastIndexOf(']');
         if (startIndex != -1 && endIndex != -1 && startIndex < endIndex) {
@@ -141,10 +230,10 @@ Requirements:
             jsonDecode(extractedJson);
             return extractedJson;
           } catch (e2) {
-            throw Exception('Failed to parse JSON: $e2\nRaw response: $response');
+            throw Exception('Failed to parse JSON: $e2');
           }
         }
-        throw Exception('No valid JSON found in response: $response');
+        throw Exception('No valid JSON found in response');
       }
     } catch (e) {
       if (e is GroqApiException) rethrow;
@@ -152,10 +241,9 @@ Requirements:
     }
   }
 
-  // ✅ NEW: Generate quiz and return parsed List directly
   Future<List<Map<String, dynamic>>> generateQuizParsed(
       String topic,
-      int numberOfQuestions
+      int numberOfQuestions,
       ) async {
     final jsonString = await generateQuiz(topic, numberOfQuestions);
     try {
@@ -166,20 +254,19 @@ Requirements:
     }
   }
 
-  // ✅ NEW: Generate quiz with fallback questions if API fails
   Future<List<Map<String, dynamic>>> generateQuizWithFallback(
       String topic,
-      int numberOfQuestions
+      int numberOfQuestions,
       ) async {
     try {
       return await generateQuizParsed(topic, numberOfQuestions);
     } catch (e) {
-      // Return fallback questions if API fails
       return _getFallbackQuestions(topic, numberOfQuestions);
     }
   }
 
-  // ✅ NEW: Fallback questions for when API is unavailable
+  // ============ FALLBACK QUESTIONS ============
+
   List<Map<String, dynamic>> _getFallbackQuestions(String topic, int count) {
     final List<Map<String, dynamic>> questions = [];
 
@@ -245,7 +332,6 @@ Requirements:
       }
     }
 
-    // If no matching topics, use general questions
     if (availableQuestions.isEmpty) {
       availableQuestions = [
         {
@@ -269,52 +355,69 @@ Requirements:
       ];
     }
 
-    // Select the required number of questions
     final shuffled = List<Map<String, dynamic>>.from(availableQuestions)..shuffle();
     final selected = shuffled.take(count.clamp(1, shuffled.length)).toList();
 
-    // Add topic to each question
     return selected.map((q) {
       q['topic'] = topic;
       return q;
     }).toList();
   }
 
-  Future<String> processFile(dynamic file) async {
-    // Process different file types
-    // This is a placeholder - implement actual file processing
-    return 'File processed: ${file.runtimeType}';
-  }
+  // ============ SUMMARIZE ============
 
   Future<String> summarizeText(String text) async {
     try {
+      if (_apiKey.isEmpty) {
+        throw GroqApiException('GROQ_API_KEY not found in .env file');
+      }
+
+      if (text.length < 50) {
+        return 'Please provide more text for summarization (minimum 50 characters).';
+      }
+
       final response = await getChatResponse(
-        'Please summarize the following text concisely:\n\n$text',
+        'Please summarize the following text concisely. Focus on the main points:\n\n$text',
         temperature: 0.3,
         maxTokens: 500,
       );
       return response;
     } catch (e) {
+      if (e is GroqApiException) rethrow;
       throw GroqApiException('Failed to summarize: ${e.toString()}');
     }
   }
 
+  // ============ STUDY TIPS ============
+
   Future<String> getStudyTips(String subject) async {
     try {
+      if (_apiKey.isEmpty) {
+        throw GroqApiException('GROQ_API_KEY not found in .env file');
+      }
+
       final response = await getChatResponse(
         'Provide 5 effective study tips for learning "$subject". '
-            'Make them specific, actionable, and research-based.',
+            'Make them specific, actionable, and research-based. '
+            'Format as a bulleted list.',
         temperature: 0.6,
         maxTokens: 800,
       );
       return response;
     } catch (e) {
+      if (e is GroqApiException) rethrow;
       throw GroqApiException('Failed to get study tips: ${e.toString()}');
     }
   }
 
+  // ============ ANSWER QUESTION ============
+
   Future<String> answerQuestion(String question, {String? context}) async {
     try {
+      if (_apiKey.isEmpty) {
+        throw GroqApiException('GROQ_API_KEY not found in .env file');
+      }
+
       final fullContext = context != null
           ? 'Context: $context\n\nQuestion: $question'
           : question;
@@ -326,9 +429,12 @@ Requirements:
       );
       return response;
     } catch (e) {
+      if (e is GroqApiException) rethrow;
       throw GroqApiException('Failed to answer question: ${e.toString()}');
     }
   }
+
+  // ============ DISPOSE ============
 
   void dispose() {
     _client.close();
